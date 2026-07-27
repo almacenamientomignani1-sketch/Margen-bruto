@@ -91,6 +91,20 @@ const fmtARS = (n) =>
     ? "—"
     : new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
+// ---------------------------------------------------------------------------
+// Historial — guarda cada cotización que pasa por el panel (Cloudflare D1)
+// ---------------------------------------------------------------------------
+function saveHistory({ tipo, simbolo, etiqueta, precio, compra, venta }) {
+  if (precio == null && compra == null && venta == null) return; // nada útil para guardar
+  fetch("/api/history/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tipo, simbolo, etiqueta, precio, compra, venta }),
+  }).catch(() => {
+    /* silencioso: si falla el guardado no queremos romper el panel en vivo */
+  });
+}
+
 function TrendIcon({ delta }) {
   if (delta == null || Math.abs(delta) < 0.0001) return <Minus size={14} color={T.textDim} />;
   if (delta > 0) return <TrendingUp size={14} color={T.green} />;
@@ -281,6 +295,22 @@ function RemarketsPanel() {
       return p;
     });
     setMarketData(next);
+    Object.entries(next).forEach(([symbol, md]) => {
+      if (!md) return;
+      const priceLA = md?.LA?.price ?? null;
+      const priceCL = md?.CL?.price ?? null;
+      const priceSE = md?.SE?.price ?? null;
+      const precio = priceLA ?? priceCL ?? priceSE ?? null;
+      const etiqueta = priceLA != null ? "último operado hoy" : priceCL != null ? "cierre anterior" : priceSE != null ? "ajuste" : null;
+      saveHistory({
+        tipo: "grano",
+        simbolo: symbol,
+        etiqueta,
+        precio,
+        compra: md?.BI?.[0]?.price ?? null,
+        venta: md?.OF?.[0]?.price ?? null,
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, watchlist, proxyUrl]);
 
@@ -609,6 +639,180 @@ function RemarketsPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Historial — buscador de cotizaciones guardadas
+// ---------------------------------------------------------------------------
+function HistorialPanel() {
+  const [simbolo, setSimbolo] = useState("");
+  const [tipo, setTipo] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [searched, setSearched] = useState(false);
+
+  const buscar = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (simbolo) params.set("simbolo", simbolo);
+      if (tipo) params.set("tipo", tipo);
+      if (desde) params.set("desde", desde);
+      if (hasta) params.set("hasta", hasta);
+      params.set("limit", "300");
+
+      const res = await fetch(`/api/history/query?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error consultando el historial");
+      setResults(data.results || []);
+      setSearched(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    background: T.bg,
+    border: `1px solid ${T.panelLine}`,
+    borderRadius: 4,
+    padding: "8px 10px",
+    color: T.text,
+    fontFamily: T.monoFont,
+    fontSize: 12,
+  };
+
+  const fmtFecha = (iso) => {
+    try {
+      return new Date(iso).toLocaleString("es-AR");
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <div>
+      <SectionHeader
+        icon={<Radio size={18} color={T.blue} />}
+        title="Historial de cotizaciones"
+        note="cada precio que pasa por el panel queda guardado acá"
+      />
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+        <div>
+          <label style={{ display: "block", fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 4 }}>
+            Símbolo
+          </label>
+          <input
+            style={inputStyle}
+            placeholder="ej. blue, SOJ.ROS"
+            value={simbolo}
+            onChange={(e) => setSimbolo(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && buscar()}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 4 }}>
+            Tipo
+          </label>
+          <select style={inputStyle} value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="dolar">Dólar</option>
+            <option value="grano">Grano</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 4 }}>
+            Desde
+          </label>
+          <input type="date" style={inputStyle} value={desde} onChange={(e) => setDesde(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 4 }}>
+            Hasta
+          </label>
+          <input type="date" style={inputStyle} value={hasta} onChange={(e) => setHasta(e.target.value)} />
+        </div>
+        <button
+          onClick={buscar}
+          disabled={loading}
+          style={{
+            background: T.gold,
+            border: "none",
+            borderRadius: 4,
+            padding: "9px 18px",
+            color: T.bg,
+            fontFamily: T.displayFont,
+            fontWeight: 600,
+            fontSize: 12.5,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Buscando…" : "Buscar"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ color: T.rust, fontFamily: T.bodyFont, fontSize: 12.5, marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+          <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      {searched && !error && results.length === 0 && (
+        <p style={{ fontFamily: T.bodyFont, fontSize: 12.5, color: T.textDim }}>
+          No se encontraron registros con esos filtros.
+        </p>
+      )}
+
+      {results.length > 0 && (
+        <div style={{ overflowX: "auto", border: `1px solid ${T.panelLine}`, borderRadius: 4 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.monoFont, fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: T.panel, textAlign: "left" }}>
+                {["Fecha/hora", "Tipo", "Símbolo", "Precio", "Compra", "Venta", "Detalle"].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      padding: "8px 10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      borderBottom: `1px solid ${T.panelLine}`,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, idx) => (
+                <tr key={idx} style={{ borderBottom: `1px solid ${T.panelLine}` }}>
+                  <td style={{ padding: "7px 10px", color: T.textDim }}>{fmtFecha(r.fecha_hora)}</td>
+                  <td style={{ padding: "7px 10px", color: T.textDim }}>{r.tipo}</td>
+                  <td style={{ padding: "7px 10px", color: T.text }}>{r.simbolo}</td>
+                  <td style={{ padding: "7px 10px", color: T.gold }}>{r.precio != null ? fmtARS(r.precio) : "—"}</td>
+                  <td style={{ padding: "7px 10px", color: T.textDim }}>{r.compra != null ? fmtARS(r.compra) : "—"}</td>
+                  <td style={{ padding: "7px 10px", color: T.textDim }}>{r.venta != null ? fmtARS(r.venta) : "—"}</td>
+                  <td style={{ padding: "7px 10px", color: T.textDim }}>{r.etiqueta || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
 const REFRESH_MS = 30000;
@@ -652,6 +856,9 @@ export default function PanelAgro() {
         return next;
       });
       setDolares(map);
+      Object.entries(map).forEach(([casa, d]) => {
+        saveHistory({ tipo: "dolar", simbolo: casa, compra: d.compra, venta: d.venta, precio: d.venta });
+      });
       setDolaresError(false);
     } catch (e) {
       setDolaresError(true);
@@ -818,6 +1025,8 @@ export default function PanelAgro() {
 
       {/* REMARKETS - futuros por posición y (a futuro) opciones */}
       <RemarketsPanel />
+
+      <HistorialPanel />
 
       <style>{`
         @keyframes pulse {

@@ -1,4 +1,4 @@
-# Pizarra de Rueda — Panel Agro Arg
+# Pizarra de Rueda — Panel Agro
 
 Dashboard de dólares y futuros/opciones agropecuarios en vivo, con conexión a **reMarkets (Primary API,
 entorno de pruebas de A3)**. Pensado como base del sistema de márgenes proyectado vs. real por
@@ -43,6 +43,31 @@ corrés `npm run dev`, vas a tener el frontend pero no las rutas `/api/remarkets
 5. Deploy. Cloudflare va a levantar automáticamente las Functions de `/functions` sin configuración
    adicional — no hace falta `wrangler.toml` para Pages.
 6. Cada push a la rama principal vuelve a deployar solo.
+
+## Base de datos — historial de cotizaciones (Cloudflare D1)
+
+Cada precio que pasa por el panel (dólares y símbolos de reMarkets) se guarda automáticamente en una
+base D1, y hay un buscador ("Historial de cotizaciones") para consultarlo después por símbolo y rango
+de fechas.
+
+**Configuración (una sola vez):**
+
+1. En el dashboard de Cloudflare → **Workers & Pages → D1** → **Create database**. Ponele un nombre, ej.
+   `panel-agro-db`.
+2. Entrá a la base recién creada → pestaña **Console** → pegá el contenido de `schema.sql` (de este
+   repo) → **Execute**. Esto crea la tabla `cotizaciones_historial`.
+3. Volvé a tu proyecto de Pages → **Settings → Bindings** → **Add binding** → tipo **D1 database**.
+   - **Variable name**: `DB` (tiene que ser exactamente así, en mayúsculas — el código ya lo espera)
+   - **D1 database**: elegís `panel-agro-db`
+4. Guardá y hacé un **Retry deployment** (o un push nuevo) para que el binding quede activo.
+
+A partir de ahí, cada vez que el panel esté abierto va a ir guardando solo. Podés buscar por símbolo
+(ej. `blue`, `SOJ.ROS`), por tipo (dólar/grano), y por rango de fechas.
+
+**Importante — sobre cuándo se guarda:** el guardado ocurre mientras la pestaña del panel está abierta
+en algún navegador (el tuyo). Si querés que se siga guardando aunque no tengas la página abierta, el
+paso siguiente es un Worker separado con un **Cron Trigger** que llame a la API en un intervalo fijo —
+te ayudo a armarlo cuando quieras.
 
 ## Opcional: restringir el acceso a vos mismo
 
