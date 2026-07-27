@@ -497,7 +497,18 @@ function RemarketsPanel() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
               {watchlist.map((symbol) => {
                 const md = marketData[symbol];
-                const last = md?.LA?.price ?? null;
+                const priceLA = md?.LA?.price ?? null;
+                const priceCL = md?.CL?.price ?? null;
+                const priceSE = md?.SE?.price ?? null;
+                const last = priceLA ?? priceCL ?? priceSE ?? null;
+                const priceLabel =
+                  priceLA != null
+                    ? "último operado hoy"
+                    : priceCL != null
+                    ? "cierre anterior"
+                    : priceSE != null
+                    ? "ajuste"
+                    : "sin operaciones";
                 const bid = md?.BI?.[0]?.price ?? null;
                 const offer = md?.OF?.[0]?.price ?? null;
                 const prefix = symbol.slice(0, 3).toUpperCase();
@@ -531,7 +542,7 @@ function RemarketsPanel() {
                     <div style={{ marginTop: 8 }}>
                       <FlapValue value={last != null ? fmtARS(last) : "—"} size={22} color={accent} />
                       <span style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginLeft: 6 }}>
-                        USD/ton (último)
+                        USD/ton ({priceLabel})
                       </span>
                     </div>
                     <div style={{ marginTop: 6, display: "flex", gap: 12, fontFamily: T.monoFont, fontSize: 11, color: T.textDim }}>
