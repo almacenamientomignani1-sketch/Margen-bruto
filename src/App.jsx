@@ -14,24 +14,14 @@ import {
   X,
   Server,
 } from "lucide-react";
+import { RemarketsProvider, useRemarkets, resolvePrice } from "./RemarketsContext.jsx";
+import { T, fmtARS, SectionHeader } from "./theme.jsx";
+import Presupuesto from "./Presupuesto.jsx";
 
 // ---------------------------------------------------------------------------
 // Paleta / tokens de diseño — "Pizarra de rueda" (grain-exchange chalkboard)
+// T, fmtARS y SectionHeader ahora viven en ./theme.jsx (compartidos con Presupuesto.jsx)
 // ---------------------------------------------------------------------------
-const T = {
-  bg: "#191712",
-  panel: "#221F17",
-  panelLine: "#332E22",
-  text: "#EDE6D6",
-  textDim: "#9C9484",
-  gold: "#C9A036",
-  blue: "#4E8B9A",
-  green: "#8AA85C",
-  rust: "#B5533C",
-  displayFont: "'Oswald', sans-serif",
-  monoFont: "'JetBrains Mono', monospace",
-  bodyFont: "'Inter', sans-serif",
-};
 
 const FONT_IMPORT_ID = "panel-agro-fonts";
 
@@ -85,11 +75,6 @@ function FlapValue({ value, size = 28, color }) {
     </span>
   );
 }
-
-const fmtARS = (n) =>
-  n == null
-    ? "—"
-    : new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 // ---------------------------------------------------------------------------
 // Historial — guarda cada cotización que pasa por el panel (Cloudflare D1)
@@ -157,29 +142,6 @@ function QuoteCard({ label, sublabel, buy, sell, accent, loading, error, prevSel
   );
 }
 
-function SectionHeader({ icon, title, note }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "34px 0 14px", flexWrap: "wrap" }}>
-      {icon}
-      <h2
-        style={{
-          fontFamily: T.displayFont,
-          fontSize: 20,
-          fontWeight: 600,
-          letterSpacing: "1px",
-          color: T.text,
-          textTransform: "uppercase",
-          margin: 0,
-        }}
-      >
-        {title}
-      </h2>
-      <div style={{ flex: 1, height: 1, background: T.panelLine, minWidth: 20 }} />
-      {note && <span style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim }}>{note}</span>}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Sección reMarkets (Primary API) — login + instrumentos + market data
 // ---------------------------------------------------------------------------
@@ -187,18 +149,23 @@ const GRAIN_KEYWORDS = ["SOJ", "MAI", "TRI", "GIR", "SOR", "CEB"];
 const GRAIN_LABELS = { SOJ: "Soja", MAI: "Maíz", TRI: "Trigo", GIR: "Girasol", SOR: "Sorgo", CEB: "Cebada" };
 
 function RemarketsPanel() {
-  // Vacío = mismo dominio (funciona solo con la Cloudflare Pages Function ya incluida).
-  // Para desarrollo local con `wrangler pages dev`, dejalo vacío también: sirve todo junto.
-  const [proxyUrl, setProxyUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [token, setToken] = useState(null);
-  const [connecting, setConnecting] = useState(false);
-  const [connError, setConnError] = useState(null);
+  const {
+    token,
+    username,
+    setUsername,
+    password,
+    setPassword,
+    connecting,
+    connError,
+    connect,
+    disconnect: ctxDisconnect,
+    instruments,
+    loadingInstruments,
+    instrumentsError,
+    loadInstruments: ctxLoadInstruments,
+    fetchQuote,
+  } = useRemarkets();
 
-  const [instruments, setInstruments] = useState([]);
-  const [loadingInstruments, setLoadingInstruments] = useState(false);
-  const [instrumentsError, setInstrumentsError] = useState(null);
   const [instrumentFilter, setInstrumentFilter] = useState("");
   const [onlyFutures, setOnlyFutures] = useState(false);
 
@@ -206,57 +173,18 @@ function RemarketsPanel() {
   const [marketData, setMarketData] = useState({});
   const [prevMarketData, setPrevMarketData] = useState({});
 
-  const connect = async () => {
-    setConnecting(true);
-    setConnError(null);
-    try {
-      const res = await fetch(`${proxyUrl}/api/remarkets/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      if (!res.ok) throw new Error(`El proxy respondió ${res.status}`);
-      const data = await res.json();
-      if (!data.token) throw new Error("El proxy no devolvió token");
-      setToken(data.token);
-    } catch (e) {
-      setConnError(
-        e.message.includes("Failed to fetch")
-          ? "No se pudo contactar al proxy local. ¿Está corriendo en " + proxyUrl + "?"
-          : e.message
-      );
-    } finally {
-      setConnecting(false);
-    }
-  };
-
   const disconnect = () => {
-    setToken(null);
-    setInstruments([]);
+    ctxDisconnect();
     setWatchlist([]);
     setMarketData({});
   };
 
   const loadInstruments = async () => {
-    if (!token) return;
-    setLoadingInstruments(true);
-    setInstrumentsError(null);
-    try {
-      const res = await fetch(
-        `${proxyUrl}/api/remarkets/instruments?token=${encodeURIComponent(token)}&segment=DDA`
-      );
-      if (!res.ok) throw new Error(`El proxy respondió ${res.status}`);
-      const data = await res.json();
-      const list = (data.instruments || []).filter((i) =>
-        GRAIN_KEYWORDS.some((k) => i.symbol && i.symbol.toUpperCase().startsWith(k))
-      );
-      setInstruments(list);
-    } catch (e) {
-      setInstrumentsError(e.message);
-    } finally {
-      setLoadingInstruments(false);
-    }
+    await ctxLoadInstruments();
   };
+  const filteredGrainInstruments = instruments.filter((i) =>
+    GRAIN_KEYWORDS.some((k) => i.symbol && i.symbol.toUpperCase().startsWith(k))
+  );
 
   const addToWatchlist = (symbol) => {
     setWatchlist((w) => (w.includes(symbol) ? w : [...w, symbol]));
@@ -274,18 +202,7 @@ function RemarketsPanel() {
     if (!token || watchlist.length === 0) return;
     const next = {};
     for (const symbol of watchlist) {
-      try {
-        const res = await fetch(
-          `${proxyUrl}/api/remarkets/marketdata?token=${encodeURIComponent(
-            token
-          )}&symbol=${encodeURIComponent(symbol)}&entries=BI,OF,LA,SE,CL`
-        );
-        if (!res.ok) throw new Error("bad response");
-        const data = await res.json();
-        next[symbol] = data.marketData || null;
-      } catch (e) {
-        next[symbol] = null;
-      }
+      next[symbol] = await fetchQuote(symbol, "BI,OF,LA,SE,CL");
     }
     setPrevMarketData((prev) => {
       const p = {};
@@ -312,7 +229,7 @@ function RemarketsPanel() {
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, watchlist, proxyUrl]);
+  }, [token, watchlist, fetchQuote]);
 
   useEffect(() => {
     if (!token || watchlist.length === 0) return;
@@ -320,7 +237,7 @@ function RemarketsPanel() {
     const interval = setInterval(refreshMarketData, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, watchlist.join(","), proxyUrl]);
+  }, [token, watchlist.join(",")]);
 
   const inputStyle = {
     background: T.bg,
@@ -358,12 +275,6 @@ function RemarketsPanel() {
             pestaña mientras la tenés abierta.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div>
-              <label style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim }}>
-                Proxy (dejalo vacío para usar este mismo dominio)
-              </label>
-              <input style={inputStyle} placeholder="vacío = mismo dominio" value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} />
-            </div>
             <div>
               <label style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim }}>Usuario</label>
               <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
@@ -478,7 +389,7 @@ function RemarketsPanel() {
             </div>
           )}
 
-          {instruments.length > 0 && (
+          {filteredGrainInstruments.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
                 <input
@@ -516,7 +427,7 @@ function RemarketsPanel() {
 
               {(() => {
                 const term = instrumentFilter.trim().toUpperCase();
-                const filtered = instruments.filter((i) => {
+                const filtered = filteredGrainInstruments.filter((i) => {
                   if (term && !i.symbol.toUpperCase().includes(term)) return false;
                   if (onlyFutures && /\s(C|P)$/.test(i.symbol)) return false;
                   return true;
@@ -524,7 +435,7 @@ function RemarketsPanel() {
                 return (
                   <>
                     <div style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 8 }}>
-                      {filtered.length} de {instruments.length} instrumentos — tocá uno para agregarlo al panel en vivo
+                      {filtered.length} de {filteredGrainInstruments.length} instrumentos — tocá uno para agregarlo al panel en vivo
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 320, overflowY: "auto" }}>
                       {filtered.map((i) => (
@@ -823,7 +734,7 @@ const GRANOS = [
   { symbol: "I.TRIGO", label: "Trigo", accent: "#C97B4A" },
 ];
 
-export default function PanelAgro() {
+function MercadosTab() {
   useFonts();
 
   const [dolares, setDolares] = useState({});
@@ -1035,5 +946,42 @@ export default function PanelAgro() {
         }
       `}</style>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Raíz: pestañas + Provider de reMarkets (compartido entre Mercados y Presupuesto)
+// ---------------------------------------------------------------------------
+export default function App() {
+  const [tab, setTab] = useState("mercados");
+
+  const tabStyle = (active) => ({
+    background: active ? T.gold : "transparent",
+    color: active ? T.bg : T.textDim,
+    border: `1px solid ${active ? T.gold : T.panelLine}`,
+    borderRadius: 4,
+    padding: "8px 16px",
+    fontFamily: T.displayFont,
+    fontWeight: 600,
+    fontSize: 12.5,
+    letterSpacing: "0.5px",
+    textTransform: "uppercase",
+    cursor: "pointer",
+  });
+
+  return (
+    <RemarketsProvider>
+      <div style={{ background: T.bg, minHeight: "100vh" }}>
+        <div style={{ display: "flex", gap: 10, padding: "16px 24px 0" }}>
+          <button style={tabStyle(tab === "mercados")} onClick={() => setTab("mercados")}>
+            Panel de mercados
+          </button>
+          <button style={tabStyle(tab === "presupuesto")} onClick={() => setTab("presupuesto")}>
+            Presupuesto agrícola
+          </button>
+        </div>
+        {tab === "mercados" ? <MercadosTab /> : <Presupuesto />}
+      </div>
+    </RemarketsProvider>
   );
 }
