@@ -185,6 +185,8 @@ function RemarketsPanel() {
   const [instruments, setInstruments] = useState([]);
   const [loadingInstruments, setLoadingInstruments] = useState(false);
   const [instrumentsError, setInstrumentsError] = useState(null);
+  const [instrumentFilter, setInstrumentFilter] = useState("");
+  const [onlyFutures, setOnlyFutures] = useState(false);
 
   const [watchlist, setWatchlist] = useState([]);
   const [marketData, setMarketData] = useState({});
@@ -448,34 +450,80 @@ function RemarketsPanel() {
 
           {instruments.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 8 }}>
-                Tocá un símbolo para agregarlo al panel en vivo
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar símbolo (ej. SOJ, MAI, TRI, NOV26)"
+                  value={instrumentFilter}
+                  onChange={(e) => setInstrumentFilter(e.target.value)}
+                  style={{
+                    background: T.bg,
+                    border: `1px solid ${T.panelLine}`,
+                    borderRadius: 4,
+                    padding: "8px 10px",
+                    color: T.text,
+                    fontFamily: T.monoFont,
+                    fontSize: 12,
+                    minWidth: 240,
+                    flex: "1 1 240px",
+                  }}
+                />
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: T.bodyFont,
+                    fontSize: 12,
+                    color: T.textDim,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input type="checkbox" checked={onlyFutures} onChange={(e) => setOnlyFutures(e.target.checked)} />
+                  Solo futuros (ocultar opciones)
+                </label>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {instruments.map((i) => (
-                  <button
-                    key={i.symbol}
-                    onClick={() => addToWatchlist(i.symbol)}
-                    disabled={watchlist.includes(i.symbol)}
-                    style={{
-                      background: watchlist.includes(i.symbol) ? T.panelLine : T.panel,
-                      border: `1px solid ${T.panelLine}`,
-                      color: watchlist.includes(i.symbol) ? T.textDim : T.text,
-                      borderRadius: 4,
-                      padding: "6px 10px",
-                      fontFamily: T.monoFont,
-                      fontSize: 12,
-                      cursor: watchlist.includes(i.symbol) ? "default" : "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    {!watchlist.includes(i.symbol) && <Plus size={11} />}
-                    {i.symbol}
-                  </button>
-                ))}
-              </div>
+
+              {(() => {
+                const term = instrumentFilter.trim().toUpperCase();
+                const filtered = instruments.filter((i) => {
+                  if (term && !i.symbol.toUpperCase().includes(term)) return false;
+                  if (onlyFutures && /\s(C|P)$/.test(i.symbol)) return false;
+                  return true;
+                });
+                return (
+                  <>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 8 }}>
+                      {filtered.length} de {instruments.length} instrumentos — tocá uno para agregarlo al panel en vivo
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+                      {filtered.map((i) => (
+                        <button
+                          key={i.symbol}
+                          onClick={() => addToWatchlist(i.symbol)}
+                          disabled={watchlist.includes(i.symbol)}
+                          style={{
+                            background: watchlist.includes(i.symbol) ? T.panelLine : T.panel,
+                            border: `1px solid ${T.panelLine}`,
+                            color: watchlist.includes(i.symbol) ? T.textDim : T.text,
+                            borderRadius: 4,
+                            padding: "6px 10px",
+                            fontFamily: T.monoFont,
+                            fontSize: 12,
+                            cursor: watchlist.includes(i.symbol) ? "default" : "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          {!watchlist.includes(i.symbol) && <Plus size={11} />}
+                          {i.symbol}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
