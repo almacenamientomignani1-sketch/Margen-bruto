@@ -1,4 +1,4 @@
-# Pizarra de Rueda — Panel Agro
+# Pizarra de Rueda — Panel Agro Arg
 
 Dashboard de dólares y futuros/opciones agropecuarios en vivo, con conexión a **reMarkets (Primary API,
 entorno de pruebas de A3)**. Pensado como base del sistema de márgenes proyectado vs. real por
