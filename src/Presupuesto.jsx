@@ -409,6 +409,13 @@ export default function Presupuesto() {
     (c) => !(detalle?.partidas || []).some((p) => p.cultivo === c)
   );
 
+  useEffect(() => {
+    if (cultivosDisponibles.length > 0 && !cultivosDisponibles.includes(nuevoCultivo)) {
+      setNuevoCultivo(cultivosDisponibles[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cultivosDisponibles.join(",")]);
+
   return (
     <div style={{ padding: "20px 24px 60px" }}>
       <SectionHeader icon={<Wheat size={20} color={T.gold} />} title="Presupuesto agrícola" note="proyectado" />
@@ -562,42 +569,116 @@ export default function Presupuesto() {
             </div>
           </div>
 
-          {/* Tabla de partidas */}
+          {/* Tabla de partidas — cultivos en columnas, como la planilla original */}
           <div style={{ overflowX: "auto", border: `1px solid ${T.panelLine}`, borderRadius: 4 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.monoFont, fontSize: 12.5 }}>
+            <table style={{ borderCollapse: "collapse", fontFamily: T.monoFont, fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: T.panel, textAlign: "left" }}>
-                  {["Cultivo", "Superficie (ha)", "Precio final de venta (USD/ton)", "Rendimiento (qq/ha)", "Toneladas", ""].map((h) => (
+                  <th
+                    style={{
+                      padding: "8px 10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 10.5,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      borderBottom: `1px solid ${T.panelLine}`,
+                      position: "sticky",
+                      left: 0,
+                      background: T.panel,
+                      minWidth: 190,
+                    }}
+                  />
+                  {partidasConCalculos.map((p) => (
                     <th
-                      key={h}
+                      key={p.id}
                       style={{
                         padding: "8px 10px",
-                        color: T.textDim,
-                        fontFamily: T.bodyFont,
-                        fontSize: 10.5,
+                        color: T.text,
+                        fontFamily: T.displayFont,
+                        fontSize: 13,
+                        letterSpacing: "0.5px",
                         textTransform: "uppercase",
-                        letterSpacing: "0.4px",
                         borderBottom: `1px solid ${T.panelLine}`,
+                        minWidth: 190,
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {h}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        {p.cultivo}
+                        <button
+                          onClick={() => borrarPartida(p.id)}
+                          style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer" }}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
                     </th>
                   ))}
+                  <th
+                    style={{
+                      padding: "8px 10px",
+                      color: T.gold,
+                      fontFamily: T.displayFont,
+                      fontSize: 13,
+                      letterSpacing: "0.5px",
+                      textTransform: "uppercase",
+                      borderBottom: `1px solid ${T.panelLine}`,
+                      minWidth: 130,
+                    }}
+                  >
+                    Totales
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {partidasConCalculos.map((p) => (
-                  <tr key={p.id} style={{ borderBottom: `1px solid ${T.panelLine}` }}>
-                    <td style={{ padding: "8px 10px", color: T.text }}>{p.cultivo}</td>
-                    <td style={{ padding: "8px 10px" }}>
+                {/* Superficie */}
+                <tr style={{ borderBottom: `1px solid ${T.panelLine}` }}>
+                  <td
+                    style={{
+                      padding: "10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 11.5,
+                      position: "sticky",
+                      left: 0,
+                      background: T.bg,
+                    }}
+                  >
+                    Superficie (ha)
+                  </td>
+                  {partidasConCalculos.map((p) => (
+                    <td key={p.id} style={{ padding: "8px 10px" }}>
                       <input
                         type="number"
-                        style={{ ...inputStyle, width: 80 }}
+                        style={{ ...inputStyle, width: 100 }}
                         value={p.superficie_ha ?? 0}
                         onChange={(e) => actualizarPartidaCampo(p.id, "superficie_ha", Number(e.target.value))}
                       />
                     </td>
-                    <td style={{ padding: "8px 10px" }}>
+                  ))}
+                  <td style={{ padding: "8px 10px", color: T.gold, fontWeight: 700 }}>{totalHa.toFixed(1)}</td>
+                </tr>
+
+                {/* Precio final de venta */}
+                <tr style={{ borderBottom: `1px solid ${T.panelLine}` }}>
+                  <td
+                    style={{
+                      padding: "10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 11.5,
+                      position: "sticky",
+                      left: 0,
+                      background: T.bg,
+                    }}
+                  >
+                    Precio final de venta
+                    <br />
+                    (USD/ton)
+                  </td>
+                  {partidasConCalculos.map((p) => (
+                    <td key={p.id} style={{ padding: "8px 10px" }}>
                       <SymbolPicker
                         symbol={p.es_soja ? detalle.presupuesto.soja_ref_symbol : p.precio_symbol}
                         congelado={p.precioFinal}
@@ -606,31 +687,59 @@ export default function Presupuesto() {
                         onPick={(symbol) => elegirPrecioPartida(p.id, symbol)}
                       />
                     </td>
-                    <td style={{ padding: "8px 10px" }}>
+                  ))}
+                  <td />
+                </tr>
+
+                {/* Rendimiento */}
+                <tr style={{ borderBottom: `1px solid ${T.panelLine}` }}>
+                  <td
+                    style={{
+                      padding: "10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 11.5,
+                      position: "sticky",
+                      left: 0,
+                      background: T.bg,
+                    }}
+                  >
+                    Rendimiento (qq/ha)
+                  </td>
+                  {partidasConCalculos.map((p) => (
+                    <td key={p.id} style={{ padding: "8px 10px" }}>
                       <input
                         type="number"
-                        style={{ ...inputStyle, width: 80 }}
+                        style={{ ...inputStyle, width: 100 }}
                         value={p.rendimiento_qq_ha ?? 0}
                         onChange={(e) => actualizarPartidaCampo(p.id, "rendimiento_qq_ha", Number(e.target.value))}
                       />
                     </td>
-                    <td style={{ padding: "8px 10px", color: T.gold }}>
+                  ))}
+                  <td />
+                </tr>
+
+                {/* Toneladas */}
+                <tr>
+                  <td
+                    style={{
+                      padding: "10px",
+                      color: T.textDim,
+                      fontFamily: T.bodyFont,
+                      fontSize: 11.5,
+                      position: "sticky",
+                      left: 0,
+                      background: T.bg,
+                    }}
+                  >
+                    Toneladas
+                  </td>
+                  {partidasConCalculos.map((p) => (
+                    <td key={p.id} style={{ padding: "8px 10px", color: T.gold }}>
                       {p.toneladas != null ? p.toneladas.toFixed(1) : "—"}
                     </td>
-                    <td style={{ padding: "8px 10px" }}>
-                      <button onClick={() => borrarPartida(p.id)} style={{ background: "transparent", border: "none", color: T.textDim, cursor: "pointer" }}>
-                        <X size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                <tr>
-                  <td style={{ padding: "8px 10px", color: T.text, fontWeight: 700 }}>Totales</td>
-                  <td style={{ padding: "8px 10px", color: T.gold, fontWeight: 700 }}>{totalHa.toFixed(1)}</td>
-                  <td />
-                  <td />
+                  ))}
                   <td style={{ padding: "8px 10px", color: T.gold, fontWeight: 700 }}>{totalTon.toFixed(1)}</td>
-                  <td />
                 </tr>
               </tbody>
             </table>
