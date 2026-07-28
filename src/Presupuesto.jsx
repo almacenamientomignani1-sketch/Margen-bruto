@@ -87,8 +87,8 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
         <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>{label}</div>
       )}
       {disabled ? (
-        <div style={{ ...inputStyle, color: T.textDim, cursor: "default" }}>
-          {symbol || "—"} <span style={{ color: T.textDim }}>(= soja de referencia)</span>
+        <div style={{ ...inputStyle, color: T.gold, fontWeight: 700, cursor: "default" }}>
+          {congelado != null ? fmtARS(congelado) : "—"}
         </div>
       ) : (
         <>
@@ -166,14 +166,16 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
           )}
         </>
       )}
-      <div style={{ fontFamily: T.monoFont, fontSize: 11, marginTop: 4, display: "flex", gap: 8 }}>
-        <span style={{ color: T.gold }}>congelado: {congelado != null ? fmtARS(congelado) : "—"}</span>
-        {live != null && (
-          <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>
-            vivo: {fmtARS(live)}
-          </span>
-        )}
-      </div>
+      {!disabled && (
+        <div style={{ fontFamily: T.monoFont, fontSize: 11, marginTop: 4, display: "flex", gap: 8 }}>
+          <span style={{ color: T.gold }}>congelado: {congelado != null ? fmtARS(congelado) : "—"}</span>
+          {live != null && (
+            <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>
+              vivo: {fmtARS(live)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -533,7 +535,7 @@ export default function Presupuesto() {
             </div>
 
             <SymbolPicker
-              label="Soja de referencia (May 26)"
+              label="Soja de referencia"
               symbol={detalle.presupuesto.soja_ref_symbol}
               congelado={sojaRefPrecio}
               live={detalle.presupuesto.soja_ref_symbol ? liveQuotes[detalle.presupuesto.soja_ref_symbol] : null}
