@@ -1,4 +1,4 @@
-import { json } from "../../../_utils.js";
+import { json } from "../../../../_utils.js";
 
 // PUT /api/presupuestos/:id/partidas/:partidaId
 // body: cualquier subconjunto de { cultivo, superficie_ha, rendimiento_qq_ha, precio_symbol, precio_congelado, orden }

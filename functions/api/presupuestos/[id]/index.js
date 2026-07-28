@@ -1,4 +1,4 @@
-import { json } from "../../_utils.js";
+import { json } from "../../../_utils.js";
 
 // GET /api/presupuestos/:id -> { presupuesto: {...}, partidas: [...] }
 export async function onRequestGet({ env, params }) {

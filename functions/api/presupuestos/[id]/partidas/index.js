@@ -1,4 +1,4 @@
-import { json } from "../../../_utils.js";
+import { json } from "../../../../_utils.js";
 
 // POST /api/presupuestos/:id/partidas
 // body: { cultivo, es_soja?, orden?, superficie_ha?, rendimiento_qq_ha?, precio_symbol?, precio_congelado? }
