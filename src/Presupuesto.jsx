@@ -103,10 +103,19 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
               textAlign: "left",
               cursor: "pointer",
               display: "flex",
-              justifyContent: "space-between",
+              flexDirection: "column",
+              alignItems: "flex-start",
+              gap: 2,
             }}
           >
-            <span>{symbol || "elegir símbolo…"}</span>
+            {congelado != null ? (
+              <>
+                <span style={{ fontSize: 16, fontWeight: 700, color: T.gold }}>{fmtARS(congelado)}</span>
+                <span style={{ fontSize: 10, color: T.textDim }}>{symbol}</span>
+              </>
+            ) : (
+              <span style={{ color: T.textDim }}>elegir símbolo…</span>
+            )}
           </button>
           {open && (
             <div
@@ -166,14 +175,9 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
           )}
         </>
       )}
-      {!disabled && (
-        <div style={{ fontFamily: T.monoFont, fontSize: 11, marginTop: 4, display: "flex", gap: 8 }}>
-          <span style={{ color: T.gold }}>congelado: {congelado != null ? fmtARS(congelado) : "—"}</span>
-          {live != null && (
-            <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>
-              vivo: {fmtARS(live)}
-            </span>
-          )}
+      {!disabled && live != null && (
+        <div style={{ fontFamily: T.monoFont, fontSize: 11, marginTop: 4 }}>
+          <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>vivo: {fmtARS(live)}</span>
         </div>
       )}
     </div>
