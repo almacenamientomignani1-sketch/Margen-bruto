@@ -13,7 +13,16 @@ export async function onRequestPut({ request, env, params }) {
     return json({ error: "Body inválido" }, 400);
   }
 
-  const allowed = ["cultivo", "superficie_ha", "rendimiento_qq_ha", "precio_symbol", "precio_congelado", "orden"];
+  const allowed = [
+    "cultivo",
+    "superficie_ha",
+    "rendimiento_qq_ha",
+    "precio_symbol",
+    "precio_congelado",
+    "precio_modo",
+    "precio_manual",
+    "orden",
+  ];
   const fields = [];
   const values = [];
 

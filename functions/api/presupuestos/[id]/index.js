@@ -21,7 +21,9 @@ export async function onRequestGet({ env, params }) {
   }
 }
 
-// PUT /api/presupuestos/:id  { arrendamiento_qq_ha?, soja_ref_symbol?, soja_ref_precio? }
+// PUT /api/presupuestos/:id
+// body: subconjunto de { arrendamiento_qq_ha, soja_ref_symbol, soja_ref_precio,
+//   soja_ref_modo, soja_ref_manual, soja_dispo_modo, soja_dispo_manual, unidad }
 export async function onRequestPut({ request, env, params }) {
   if (!env.DB) return json({ error: "Falta el binding DB" }, 500);
   const id = params.id;
@@ -47,6 +49,26 @@ export async function onRequestPut({ request, env, params }) {
     values.push(body.soja_ref_precio ?? null);
     fields.push("soja_ref_fecha = ?");
     values.push(new Date().toISOString());
+  }
+  if (body.soja_ref_modo !== undefined) {
+    fields.push("soja_ref_modo = ?");
+    values.push(body.soja_ref_modo);
+  }
+  if (body.soja_ref_manual !== undefined) {
+    fields.push("soja_ref_manual = ?");
+    values.push(body.soja_ref_manual);
+  }
+  if (body.soja_dispo_modo !== undefined) {
+    fields.push("soja_dispo_modo = ?");
+    values.push(body.soja_dispo_modo);
+  }
+  if (body.soja_dispo_manual !== undefined) {
+    fields.push("soja_dispo_manual = ?");
+    values.push(body.soja_dispo_manual);
+  }
+  if (body.unidad !== undefined) {
+    fields.push("unidad = ?");
+    values.push(body.unidad);
   }
 
   if (fields.length === 0) return json({ error: "Nada para actualizar" }, 400);

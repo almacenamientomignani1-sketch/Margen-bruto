@@ -67,28 +67,116 @@ async function apiSend(url, method, body) {
   return data;
 }
 
+const UNIDADES = {
+  ton: { label: "USD/ton", corto: "ton", factor: 1, decimales: 2 },
+  qq: { label: "USD/qq", corto: "qq", factor: 1 / 10, decimales: 2 },
+  kg: { label: "USD/kg", corto: "kg", factor: 1 / 1000, decimales: 4 },
+};
+
+// Convierte un precio canónico (siempre guardado en USD/ton) a la unidad elegida para mostrar.
+function convertirPrecio(usdPorTon, unidad) {
+  if (usdPorTon == null) return null;
+  return usdPorTon * (UNIDADES[unidad]?.factor ?? 1);
+}
+// Convierte un valor que el usuario tipeó en la unidad elegida, de vuelta a USD/ton para guardar.
+function aTonelada(valorEnUnidad, unidad) {
+  if (valorEnUnidad == null || valorEnUnidad === "") return null;
+  const factor = UNIDADES[unidad]?.factor ?? 1;
+  return Number(valorEnUnidad) / factor;
+}
+function fmtPrecio(usdPorTon, unidad) {
+  const v = convertirPrecio(usdPorTon, unidad);
+  if (v == null) return "—";
+  const dec = UNIDADES[unidad]?.decimales ?? 2;
+  return new Intl.NumberFormat("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(v);
+}
+
+function efectivo(modo, autoVal, manualVal) {
+  return modo === "manual" ? manualVal ?? null : autoVal ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Toggle chico Automático / Manual
+// ---------------------------------------------------------------------------
+function ModoToggle({ modo, onChange }) {
+  const btn = (activo) => ({
+    background: activo ? T.gold : "transparent",
+    color: activo ? T.bg : T.textDim,
+    border: `1px solid ${activo ? T.gold : T.panelLine}`,
+    borderRadius: 3,
+    padding: "2px 8px",
+    fontFamily: T.bodyFont,
+    fontSize: 9.5,
+    letterSpacing: "0.3px",
+    textTransform: "uppercase",
+    cursor: "pointer",
+  });
+  return (
+    <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+      <button style={btn(modo !== "manual")} onClick={() => onChange("auto")}>
+        Automático
+      </button>
+      <button style={btn(modo === "manual")} onClick={() => onChange("manual")}>
+        Manual
+      </button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Selector de símbolo (futuro/dispo) con buscador, muestra congelado + vivo
 // ---------------------------------------------------------------------------
-function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
+function SymbolPicker({ label, symbol, congelado, live, disabled, onPick, modo, onModoChange, manualValor, onManualChange, unidad = "ton" }) {
   const { instruments, loadingInstruments, loadInstruments, token } = useRemarkets();
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState("");
+  const [manualTexto, setManualTexto] = useState("");
+
+  useEffect(() => {
+    setManualTexto(manualValor != null ? convertirPrecio(manualValor, unidad).toFixed(UNIDADES[unidad].decimales) : "");
+  }, [manualValor, unidad]);
 
   const results = term.trim()
     ? instruments.filter((i) => i.symbol.toUpperCase().includes(term.trim().toUpperCase())).slice(0, 30)
     : [];
 
   const delta = live != null && congelado != null ? live - congelado : null;
+  const esManual = modo === "manual";
 
   return (
     <div style={{ position: "relative", minWidth: 200 }}>
       {label && (
         <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>{label}</div>
       )}
+
+      {!disabled && onModoChange && <ModoToggle modo={modo} onChange={onModoChange} />}
+
       {disabled ? (
-        <div style={{ ...inputStyle, color: T.gold, fontWeight: 700, cursor: "default" }}>
-          {congelado != null ? fmtARS(congelado) : "—"}
+        <div
+          style={{
+            ...inputStyle,
+            cursor: "default",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 2,
+          }}
+        >
+          <span style={{ fontSize: 16, fontWeight: 700, color: T.gold }}>{fmtPrecio(congelado, unidad)}</span>
+          {symbol && <span style={{ fontSize: 10, color: T.textDim }}>{symbol}</span>}
+        </div>
+      ) : esManual ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="number"
+            step="any"
+            style={{ ...inputStyle, width: 110, fontSize: 15, fontWeight: 700, color: T.gold }}
+            value={manualTexto}
+            onChange={(e) => setManualTexto(e.target.value)}
+            onBlur={() => onManualChange(aTonelada(manualTexto, unidad))}
+            placeholder={`en ${UNIDADES[unidad].corto}`}
+          />
+          <span style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim }}>{UNIDADES[unidad].corto}</span>
         </div>
       ) : (
         <>
@@ -110,7 +198,7 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
           >
             {congelado != null ? (
               <>
-                <span style={{ fontSize: 16, fontWeight: 700, color: T.gold }}>{fmtARS(congelado)}</span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: T.gold }}>{fmtPrecio(congelado, unidad)}</span>
                 <span style={{ fontSize: 10, color: T.textDim }}>{symbol}</span>
               </>
             ) : (
@@ -175,9 +263,11 @@ function SymbolPicker({ label, symbol, congelado, live, disabled, onPick }) {
           )}
         </>
       )}
-      {!disabled && live != null && (
+      {!esManual && live != null && (
         <div style={{ fontFamily: T.monoFont, fontSize: 11, marginTop: 4 }}>
-          <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>vivo: {fmtARS(live)}</span>
+          <span style={{ color: delta > 0 ? T.green : delta < 0 ? T.rust : T.textDim }}>
+            vivo: {fmtPrecio(live, unidad)}
+          </span>
         </div>
       )}
     </div>
@@ -208,6 +298,7 @@ export default function Presupuesto() {
   const [sojaDispoPesos, setSojaDispoPesos] = useState(null);
 
   const [nuevoCultivo, setNuevoCultivo] = useState(CULTIVOS_PRESET[0]);
+  const [unidad, setUnidad] = useState("ton");
 
   // --- carga inicial de campos ---
   useEffect(() => {
@@ -247,6 +338,19 @@ export default function Presupuesto() {
   useEffect(() => {
     cargarDetalle();
   }, [cargarDetalle]);
+
+  useEffect(() => {
+    if (detalle?.presupuesto?.unidad) setUnidad(detalle.presupuesto.unidad);
+  }, [detalle?.presupuesto?.id]);
+
+  const cambiarUnidad = async (u) => {
+    setUnidad(u);
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}`, "PUT", { unidad: u });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   // --- dólar mayorista (para convertir soja dispo de pesos a USD) ---
   useEffect(() => {
@@ -335,6 +439,66 @@ export default function Presupuesto() {
     }
   };
 
+  const cambiarSojaRefModo = async (modo) => {
+    setDetalle((d) => ({ ...d, presupuesto: { ...d.presupuesto, soja_ref_modo: modo } }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}`, "PUT", { soja_ref_modo: modo });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const actualizarSojaRefManual = async (valorTon) => {
+    setDetalle((d) => ({ ...d, presupuesto: { ...d.presupuesto, soja_ref_manual: valorTon } }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}`, "PUT", { soja_ref_manual: valorTon });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const cambiarSojaDispoModo = async (modo) => {
+    setDetalle((d) => ({ ...d, presupuesto: { ...d.presupuesto, soja_dispo_modo: modo } }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}`, "PUT", { soja_dispo_modo: modo });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const actualizarSojaDispoManual = async (valorTon) => {
+    setDetalle((d) => ({ ...d, presupuesto: { ...d.presupuesto, soja_dispo_manual: valorTon } }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}`, "PUT", { soja_dispo_manual: valorTon });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const cambiarPrecioModoPartida = async (partidaId, modo) => {
+    setDetalle((d) => ({
+      ...d,
+      partidas: d.partidas.map((p) => (p.id === partidaId ? { ...p, precio_modo: modo } : p)),
+    }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}/partidas/${partidaId}`, "PUT", { precio_modo: modo });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const actualizarPrecioManualPartida = async (partidaId, valorTon) => {
+    setDetalle((d) => ({
+      ...d,
+      partidas: d.partidas.map((p) => (p.id === partidaId ? { ...p, precio_manual: valorTon } : p)),
+    }));
+    try {
+      await apiSend(`/api/presupuestos/${presupuestoId}/partidas/${partidaId}`, "PUT", { precio_manual: valorTon });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const elegirPrecioPartida = async (partidaId, symbol) => {
     const md = await fetchQuote(symbol);
     const { precio } = resolvePrice(md);
@@ -388,25 +552,37 @@ export default function Presupuesto() {
   };
 
   // --- cálculos derivados ---
-  const sojaRefPrecio = detalle?.presupuesto?.soja_ref_precio ?? null;
-  const sojaDispoUsd =
+  const sojaRefModo = detalle?.presupuesto?.soja_ref_modo || "auto";
+  const sojaRefPrecio = efectivo(sojaRefModo, detalle?.presupuesto?.soja_ref_precio, detalle?.presupuesto?.soja_ref_manual);
+
+  const sojaDispoModo = detalle?.presupuesto?.soja_dispo_modo || "auto";
+  const sojaDispoAuto =
     sojaDispoPesos != null && dolarMayoristaCompra ? sojaDispoPesos / dolarMayoristaCompra : null;
+  const sojaDispoUsd = efectivo(sojaDispoModo, sojaDispoAuto, detalle?.presupuesto?.soja_dispo_manual);
+
   const valorRentaUsdTon =
     sojaRefPrecio != null && sojaDispoUsd != null ? (sojaRefPrecio + sojaDispoUsd) / 2 : null;
   const arrendamientoQqHa = detalle?.presupuesto?.arrendamiento_qq_ha ?? 10;
   const valorRentaUsdHa = valorRentaUsdTon != null ? valorRentaUsdTon * (arrendamientoQqHa / 10) : null;
 
-  const partidaTrigo = detalle?.partidas?.find((p) => p.cultivo.trim().toLowerCase() === "trigo");
-  const precioTrigo = partidaTrigo?.precio_congelado ?? null;
-  const qqTrigoEquivalente =
-    valorRentaUsdHa != null && precioTrigo ? (valorRentaUsdHa / precioTrigo) * 10 : null;
-
   const partidasConCalculos = (detalle?.partidas || []).map((p) => {
-    const precioFinal = p.es_soja ? sojaRefPrecio : p.precio_congelado;
+    const precioFinal = p.es_soja ? sojaRefPrecio : efectivo(p.precio_modo, p.precio_congelado, p.precio_manual);
     const toneladas =
       p.superficie_ha != null && p.rendimiento_qq_ha != null ? (p.superficie_ha * p.rendimiento_qq_ha) / 10 : null;
     return { ...p, precioFinal, toneladas };
   });
+
+  const buscarPartida = (nombreExacto) =>
+    partidasConCalculos.find((p) => p.cultivo.trim().toLowerCase() === nombreExacto.toLowerCase());
+
+  const equivalentes = [
+    { grano: "Trigo", precio: buscarPartida("Trigo")?.precioFinal ?? null },
+    { grano: "Maíz", precio: buscarPartida("Maíz 1°")?.precioFinal ?? null },
+    { grano: "Sorgo", precio: buscarPartida("Sorgo")?.precioFinal ?? null },
+  ].map((e) => ({
+    ...e,
+    qq: valorRentaUsdHa != null && e.precio ? (valorRentaUsdHa / e.precio) * 10 : null,
+  }));
 
   const totalHa = partidasConCalculos.reduce((acc, p) => acc + (Number(p.superficie_ha) || 0), 0);
   const totalTon = partidasConCalculos.reduce((acc, p) => acc + (p.toneladas || 0), 0);
@@ -513,6 +689,29 @@ export default function Presupuesto() {
 
       {detalle && (
         <>
+          {/* Selector de unidad de medida */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim }}>Ver precios en:</span>
+            {Object.entries(UNIDADES).map(([key, u]) => (
+              <button
+                key={key}
+                onClick={() => cambiarUnidad(key)}
+                style={{
+                  background: unidad === key ? T.gold : "transparent",
+                  color: unidad === key ? T.bg : T.textDim,
+                  border: `1px solid ${unidad === key ? T.gold : T.panelLine}`,
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  fontFamily: T.bodyFont,
+                  fontSize: 11,
+                  cursor: "pointer",
+                }}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+
           {/* Encabezado: arrendamiento + soja de referencia + soja dispo + valor renta */}
           <div
             style={{
@@ -541,38 +740,70 @@ export default function Presupuesto() {
             <SymbolPicker
               label="Soja de referencia"
               symbol={detalle.presupuesto.soja_ref_symbol}
-              congelado={sojaRefPrecio}
+              congelado={detalle.presupuesto.soja_ref_precio}
               live={detalle.presupuesto.soja_ref_symbol ? liveQuotes[detalle.presupuesto.soja_ref_symbol] : null}
               onPick={elegirSojaRef}
+              modo={sojaRefModo}
+              onModoChange={cambiarSojaRefModo}
+              manualValor={detalle.presupuesto.soja_ref_manual}
+              onManualChange={actualizarSojaRefManual}
+              unidad={unidad}
             />
 
             <div>
               <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>
-                Soja dispo Rosario (USD/ton)
+                Soja dispo Rosario
               </div>
-              <div style={{ ...inputStyle, cursor: "default" }}>{sojaDispoUsd != null ? fmtARS(sojaDispoUsd) : "—"}</div>
-              <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginTop: 3 }}>
-                {sojaDispoPesos != null ? `$${fmtARS(sojaDispoPesos)} / mayorista compra $${fmtARS(dolarMayoristaCompra)}` : "sin datos"}
-              </div>
+              <ModoToggle modo={sojaDispoModo} onChange={cambiarSojaDispoModo} />
+              {sojaDispoModo === "manual" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="number"
+                    step="any"
+                    style={{ ...inputStyle, width: 110, fontSize: 15, fontWeight: 700, color: T.gold }}
+                    value={
+                      detalle.presupuesto.soja_dispo_manual != null
+                        ? convertirPrecio(detalle.presupuesto.soja_dispo_manual, unidad)
+                        : ""
+                    }
+                    onChange={(e) => actualizarSojaDispoManual(aTonelada(e.target.value, unidad))}
+                    placeholder={`en ${UNIDADES[unidad].corto}`}
+                  />
+                  <span style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim }}>{UNIDADES[unidad].corto}</span>
+                </div>
+              ) : (
+                <>
+                  <div style={{ ...inputStyle, cursor: "default", fontSize: 16, fontWeight: 700, color: T.gold }}>
+                    {fmtPrecio(sojaDispoAuto, unidad)}
+                  </div>
+                  <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginTop: 3 }}>
+                    {sojaDispoPesos != null
+                      ? `$${fmtARS(sojaDispoPesos)} / mayorista compra $${fmtARS(dolarMayoristaCompra)}`
+                      : "sin datos"}
+                  </div>
+                </>
+              )}
             </div>
 
             <div>
               <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>
-                Valor renta (USD/ha)
+                Valor renta ({UNIDADES[unidad].label}/ha)
               </div>
               <div style={{ ...inputStyle, cursor: "default", color: T.gold, fontWeight: 700 }}>
-                {valorRentaUsdHa != null ? fmtARS(valorRentaUsdHa) : "—"}
+                {fmtPrecio(valorRentaUsdHa, unidad)}
               </div>
             </div>
 
-            <div>
-              <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>
-                Equivalente en trigo (qq)
+            {equivalentes.map((e) => (
+              <div key={e.grano}>
+                <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, marginBottom: 3 }}>
+                  Equivalente en {e.grano.toLowerCase()} (qq)
+                </div>
+                <div style={{ ...inputStyle, cursor: "default", color: T.gold, fontWeight: 700 }}>
+                  {e.qq != null ? e.qq.toFixed(1) : `— (elegí precio de ${e.grano})`}
+                </div>
               </div>
-              <div style={{ ...inputStyle, cursor: "default", color: T.gold, fontWeight: 700 }}>
-                {qqTrigoEquivalente != null ? qqTrigoEquivalente.toFixed(1) : "— (elegí precio de Trigo)"}
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* Tabla de partidas — cultivos en columnas, como la planilla original */}
@@ -680,17 +911,27 @@ export default function Presupuesto() {
                     }}
                   >
                     Precio final de venta
-                    <br />
-                    (USD/ton)
+                    <br />({UNIDADES[unidad].label})
                   </td>
                   {partidasConCalculos.map((p) => (
                     <td key={p.id} style={{ padding: "8px 10px" }}>
                       <SymbolPicker
                         symbol={p.es_soja ? detalle.presupuesto.soja_ref_symbol : p.precio_symbol}
-                        congelado={p.precioFinal}
-                        live={p.precio_symbol ? liveQuotes[p.precio_symbol] : null}
+                        congelado={p.es_soja ? p.precioFinal : p.precio_congelado}
+                        live={
+                          p.es_soja
+                            ? liveQuotes[detalle.presupuesto.soja_ref_symbol]
+                            : p.precio_symbol
+                            ? liveQuotes[p.precio_symbol]
+                            : null
+                        }
                         disabled={!!p.es_soja}
                         onPick={(symbol) => elegirPrecioPartida(p.id, symbol)}
+                        modo={p.precio_modo}
+                        onModoChange={(m) => cambiarPrecioModoPartida(p.id, m)}
+                        manualValor={p.precio_manual}
+                        onManualChange={(v) => actualizarPrecioManualPartida(p.id, v)}
+                        unidad={unidad}
                       />
                     </td>
                   ))}
