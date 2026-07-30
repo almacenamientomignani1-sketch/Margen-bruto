@@ -136,6 +136,15 @@ export default function Ejecucion() {
     }
   };
 
+  const actualizarHectareas = async (hectareas) => {
+    setCampos((prev) => prev.map((c) => (c.id === campoId ? { ...c, hectareas } : c)));
+    try {
+      await apiSend(`/api/campos/${campoId}`, "PUT", { hectareas });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const crearPresupuesto = async () => {
     if (!campoId || !nuevaCampania.trim()) return;
     try {
@@ -260,6 +269,11 @@ export default function Ejecucion() {
     { usd: 0, ars: 0 }
   );
 
+  const campoSeleccionado = campos.find((c) => c.id === campoId);
+  const hectareas = campoSeleccionado?.hectareas || null;
+  const usdPorHa = hectareas ? totalGeneral.usd / hectareas : null;
+  const arsPorHa = hectareas ? totalGeneral.ars / hectareas : null;
+
   return (
     <div style={{ padding: "20px 24px 60px" }}>
       <SectionHeader
@@ -287,6 +301,19 @@ export default function Ejecucion() {
             </button>
           </div>
         </div>
+
+        {campoId && (
+          <div>
+            <div style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim, marginBottom: 4 }}>Hectáreas del campo</div>
+            <input
+              type="number"
+              style={{ ...inputStyle, width: 100 }}
+              placeholder="ej. 1500"
+              value={campoSeleccionado?.hectareas ?? ""}
+              onChange={(e) => actualizarHectareas(e.target.value === "" ? null : Number(e.target.value))}
+            />
+          </div>
+        )}
 
         {campoId && (
           <div>
@@ -352,6 +379,19 @@ export default function Ejecucion() {
               </div>
               <div style={{ fontFamily: T.displayFont, fontSize: 18, color: T.text }}>$ {fmtMoneda(totalGeneral.ars)}</div>
             </div>
+            <div style={{ width: 1, height: 34, background: T.panelLine }} />
+            <div>
+              <div style={{ fontFamily: T.bodyFont, fontSize: 10, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Costo por hectárea
+              </div>
+              {hectareas ? (
+                <div style={{ fontFamily: T.displayFont, fontSize: 18, color: T.gold }}>
+                  USD {fmtMoneda(usdPorHa)}/ha <span style={{ fontSize: 12, color: T.textDim }}>· $ {fmtMoneda(arsPorHa)}/ha</span>
+                </div>
+              ) : (
+                <div style={{ fontFamily: T.bodyFont, fontSize: 11.5, color: T.textDim }}>cargá las hectáreas del campo →</div>
+              )}
+            </div>
             {dolar && (
               <div style={{ marginLeft: "auto", fontFamily: T.bodyFont, fontSize: 10.5, color: T.textDim }}>
                 dólar mayorista venta usado para convertir: ${fmtMoneda(dolar.venta)}
@@ -379,6 +419,9 @@ export default function Ejecucion() {
                   </h3>
                   <span style={{ fontFamily: T.monoFont, fontSize: 13, color: T.gold, fontWeight: 700 }}>
                     USD {fmtMoneda(t.usd)} <span style={{ color: T.textDim, fontWeight: 400 }}>· $ {fmtMoneda(t.ars)}</span>
+                    {hectareas && (
+                      <span style={{ color: T.textDim, fontWeight: 400 }}> · USD {fmtMoneda(t.usd / hectareas)}/ha</span>
+                    )}
                   </span>
                 </div>
 
