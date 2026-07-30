@@ -18,6 +18,7 @@ import { RemarketsProvider, useRemarkets, resolvePrice } from "./RemarketsContex
 import { T, fmtARS, SectionHeader } from "./theme.jsx";
 import Presupuesto from "./Presupuesto.jsx";
 import Proyeccion from "./Proyeccion.jsx";
+import Ejecucion from "./Ejecucion.jsx";
 
 // ---------------------------------------------------------------------------
 // Paleta / tokens de diseño — "Pizarra de rueda" (grain-exchange chalkboard)
@@ -983,8 +984,19 @@ export default function App() {
           <button style={tabStyle(tab === "proyeccion")} onClick={() => setTab("proyeccion")}>
             Proyección de presupuesto
           </button>
+          <button style={tabStyle(tab === "ejecucion")} onClick={() => setTab("ejecucion")}>
+            Ejecución de presupuesto
+          </button>
         </div>
-        {tab === "mercados" ? <MercadosTab /> : tab === "presupuesto" ? <Presupuesto /> : <Proyeccion />}
+        {tab === "mercados" ? (
+          <MercadosTab />
+        ) : tab === "presupuesto" ? (
+          <Presupuesto />
+        ) : tab === "proyeccion" ? (
+          <Proyeccion />
+        ) : (
+          <Ejecucion />
+        )}
       </div>
     </RemarketsProvider>
   );
