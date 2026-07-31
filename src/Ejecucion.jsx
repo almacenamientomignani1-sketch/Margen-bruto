@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { AlertCircle, Plus, X, ChevronDown, ChevronRight, ClipboardCheck } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { AlertCircle, Plus, X, ChevronDown, ChevronRight, ClipboardCheck, Upload, FileText, Check } from "lucide-react";
 import { T, SectionHeader } from "./theme.jsx";
+import { extraerFactura } from "./lib/facturas.js";
 
 const SECCIONES = ["Labores", "Insumos", "Servicios", "Alquileres", "Gastos de estructura", "Gastos comerciales"];
 const UNIDADES_COMPRA = ["Litros", "Kg", "Unidades", "Horas", "Otro"];
@@ -68,6 +69,12 @@ export default function Ejecucion() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dolar, setDolar] = useState(null);
+
+  const [facturaCargando, setFacturaCargando] = useState(false);
+  const [facturaError, setFacturaError] = useState(null);
+  const [factura, setFactura] = useState(null); // resultado crudo del parser
+  const [itemsRevision, setItemsRevision] = useState([]); // copia editable para la revisión
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     apiGet("/api/campos")
@@ -232,6 +239,104 @@ export default function Ejecucion() {
     }
   };
 
+  // --- carga de facturas PDF ---
+  const onSeleccionarPDF = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo después
+    if (!file) return;
+
+    setFacturaCargando(true);
+    setFacturaError(null);
+    try {
+      const resultado = await extraerFactura(file);
+      if (!resultado.items || resultado.items.length === 0) {
+        throw new Error(
+          "No se pudo reconocer ninguna línea de producto en el PDF. Puede ser un formato nuevo — pasámelo y le agrego el parser."
+        );
+      }
+      setFactura(resultado);
+      setItemsRevision(
+        resultado.items.map((it) => ({
+          incluir: true,
+          producto: it.producto,
+          cantidad: it.cantidad,
+          precio_unitario: it.subtotal_con_iva != null && it.cantidad ? it.subtotal_con_iva / it.cantidad : it.precio_unitario_neto,
+          moneda: resultado.moneda,
+          seccion: SECCIONES[0],
+          categoriaId: "",
+          nuevaCategoria: "",
+        }))
+      );
+    } catch (e) {
+      setFacturaError(e.message);
+    } finally {
+      setFacturaCargando(false);
+    }
+  };
+
+  const cancelarRevisionFactura = () => {
+    setFactura(null);
+    setItemsRevision([]);
+    setFacturaError(null);
+  };
+
+  const actualizarItemRevision = (idx, campo, valor) => {
+    setItemsRevision((prev) => prev.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)));
+  };
+
+  const aplicarATodos = (campo, valor) => {
+    setItemsRevision((prev) => prev.map((it) => ({ ...it, [campo]: valor })));
+  };
+
+  const confirmarCargaFactura = async () => {
+    setFacturaCargando(true);
+    setFacturaError(null);
+    const cacheCategoriasNuevas = {}; // "seccion||nombre" -> id, para no crear duplicados dentro de la misma carga
+
+    try {
+      for (const it of itemsRevision) {
+        if (!it.incluir) continue;
+
+        let categoriaId = it.categoriaId;
+        if (categoriaId === "__nueva__") {
+          const nombreNueva = it.nuevaCategoria.trim();
+          if (!nombreNueva) throw new Error(`Falta el nombre de la categoría nueva para "${it.producto}"`);
+          const clave = `${it.seccion}||${nombreNueva}`;
+          if (cacheCategoriasNuevas[clave]) {
+            categoriaId = cacheCategoriasNuevas[clave];
+          } else {
+            const nueva = await apiSend("/api/ejecucion-categorias", "POST", {
+              presupuesto_id: presupuestoId,
+              seccion: it.seccion,
+              nombre: nombreNueva,
+            });
+            categoriaId = nueva.id;
+            cacheCategoriasNuevas[clave] = categoriaId;
+          }
+        }
+        if (!categoriaId) throw new Error(`Falta elegir categoría para "${it.producto}"`);
+
+        await apiSend("/api/ejecucion-compras", "POST", {
+          categoria_id: categoriaId,
+          nombre: it.producto,
+          unidad: "Unidades",
+          cantidad: it.cantidad,
+          precio_unitario: Number(it.precio_unitario.toFixed(4)),
+          moneda: it.moneda,
+          proveedor: factura.proveedor || null,
+          fecha: factura.fecha || null,
+          nota: "Cargado desde factura PDF",
+        });
+      }
+      cancelarRevisionFactura();
+      cargarTodo();
+    } catch (e) {
+      setFacturaError(e.message);
+    } finally {
+      setFacturaCargando(false);
+    }
+  };
+
   // --- cálculos ---
   const comprasDeCategoria = (categoriaId) => compras.filter((c) => c.categoria_id === categoriaId);
 
@@ -343,6 +448,237 @@ export default function Ejecucion() {
       {error && (
         <div style={{ color: T.rust, display: "flex", gap: 8, alignItems: "center", fontFamily: T.bodyFont, fontSize: 12.5, marginBottom: 16 }}>
           <AlertCircle size={14} /> {error}
+        </div>
+      )}
+
+      {presupuestoId && !factura && (
+        <div style={{ marginBottom: 22 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf"
+            style={{ display: "none" }}
+            onChange={onSeleccionarPDF}
+          />
+          <button
+            style={{ ...btnGhost, borderColor: T.gold, color: T.gold, display: "flex", alignItems: "center", gap: 6 }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={facturaCargando}
+          >
+            <Upload size={14} />
+            {facturaCargando ? "Leyendo factura…" : "Cargar factura (PDF)"}
+          </button>
+          {facturaError && (
+            <div style={{ color: T.rust, display: "flex", gap: 8, alignItems: "center", fontFamily: T.bodyFont, fontSize: 12.5, marginTop: 10 }}>
+              <AlertCircle size={14} /> {facturaError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Panel de revisión de la factura extraída */}
+      {factura && (
+        <div
+          style={{
+            background: T.panel,
+            border: `1px solid ${T.gold}`,
+            borderRadius: 6,
+            padding: "16px 18px",
+            marginBottom: 26,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <FileText size={18} color={T.gold} />
+            <span style={{ fontFamily: T.displayFont, fontSize: 16, letterSpacing: "0.5px", textTransform: "uppercase", color: T.text }}>
+              Revisar factura {factura.proveedorDetectado ? `— ${factura.proveedorDetectado}` : ""}
+            </span>
+          </div>
+
+          {factura.generico && (
+            <div style={{ color: T.rust, fontFamily: T.bodyFont, fontSize: 12, marginBottom: 10, display: "flex", gap: 6, alignItems: "center" }}>
+              <AlertCircle size={13} /> No reconocí este proveedor todavía — revisá bien los datos antes de confirmar (y
+              de paso pasame la factura para agregarle su formato).
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 14, fontFamily: T.bodyFont, fontSize: 12, color: T.textDim }}>
+            <span>
+              Proveedor: <strong style={{ color: T.text }}>{factura.proveedor || "—"}</strong>
+            </span>
+            <span>
+              Fecha: <strong style={{ color: T.text }}>{factura.fecha || "—"}</strong>
+            </span>
+            <span>
+              Moneda: <strong style={{ color: T.text }}>{factura.moneda}</strong>
+            </span>
+            {factura.total != null && (
+              <span>
+                Total factura: <strong style={{ color: T.gold }}>{factura.moneda} {factura.total.toFixed(2)}</strong>
+              </span>
+            )}
+          </div>
+
+          {/* Asignación masiva */}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: T.bodyFont, fontSize: 11, color: T.textDim }}>Asignar a todos:</span>
+            <select
+              style={inputStyle}
+              onChange={(e) => e.target.value && aplicarATodos("seccion", e.target.value)}
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Sección…
+              </option>
+              {SECCIONES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {itemsRevision.map((it, idx) => {
+              const catsDeSeccion = categorias.filter((c) => c.seccion === it.seccion);
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-end",
+                    flexWrap: "wrap",
+                    background: T.bg,
+                    border: `1px solid ${T.panelLine}`,
+                    borderRadius: 4,
+                    padding: "8px 10px",
+                    opacity: it.incluir ? 1 : 0.45,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={it.incluir}
+                    onChange={(e) => actualizarItemRevision(idx, "incluir", e.target.checked)}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <div style={{ flex: "1 1 200px", minWidth: 180 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Producto</div>
+                    <input
+                      style={{ ...inputStyle, width: "100%" }}
+                      value={it.producto}
+                      onChange={(e) => actualizarItemRevision(idx, "producto", e.target.value)}
+                    />
+                  </div>
+                  <div style={{ minWidth: 70 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Cantidad</div>
+                    <input
+                      type="number"
+                      style={{ ...inputStyle, width: 65 }}
+                      value={it.cantidad}
+                      onChange={(e) => actualizarItemRevision(idx, "cantidad", Number(e.target.value))}
+                    />
+                  </div>
+                  <div style={{ minWidth: 105 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Precio unitario</div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <input
+                        type="number"
+                        style={{ ...inputStyle, width: 75 }}
+                        value={it.precio_unitario?.toFixed ? it.precio_unitario.toFixed(2) : it.precio_unitario}
+                        onChange={(e) => actualizarItemRevision(idx, "precio_unitario", Number(e.target.value))}
+                      />
+                      <select
+                        style={{ ...inputStyle, width: 66 }}
+                        value={it.moneda}
+                        onChange={(e) => actualizarItemRevision(idx, "moneda", e.target.value)}
+                      >
+                        <option value="ARS">ARS</option>
+                        <option value="USD">USD</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 130 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Sección</div>
+                    <select
+                      style={inputStyle}
+                      value={it.seccion}
+                      onChange={(e) => {
+                        actualizarItemRevision(idx, "seccion", e.target.value);
+                        actualizarItemRevision(idx, "categoriaId", "");
+                      }}
+                    >
+                      {SECCIONES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ minWidth: 150 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Categoría</div>
+                    <select
+                      style={inputStyle}
+                      value={it.categoriaId}
+                      onChange={(e) => actualizarItemRevision(idx, "categoriaId", e.target.value)}
+                    >
+                      <option value="" disabled>
+                        Elegir…
+                      </option>
+                      {catsDeSeccion.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre}
+                        </option>
+                      ))}
+                      <option value="__nueva__">+ Nueva categoría…</option>
+                    </select>
+                    {it.categoriaId === "__nueva__" && (
+                      <input
+                        style={{ ...inputStyle, width: "100%", marginTop: 4 }}
+                        placeholder="Nombre de la categoría"
+                        value={it.nuevaCategoria}
+                        onChange={(e) => actualizarItemRevision(idx, "nuevaCategoria", e.target.value)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {facturaError && (
+            <div style={{ color: T.rust, display: "flex", gap: 8, alignItems: "center", fontFamily: T.bodyFont, fontSize: 12.5, marginTop: 12 }}>
+              <AlertCircle size={14} /> {facturaError}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button
+              onClick={confirmarCargaFactura}
+              disabled={facturaCargando}
+              style={{
+                background: T.gold,
+                border: "none",
+                borderRadius: 4,
+                padding: "9px 18px",
+                color: T.bg,
+                fontFamily: T.displayFont,
+                fontWeight: 600,
+                fontSize: 12.5,
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Check size={14} />
+              {facturaCargando ? "Guardando…" : "Confirmar carga"}
+            </button>
+            <button style={btnGhost} onClick={cancelarRevisionFactura} disabled={facturaCargando}>
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
