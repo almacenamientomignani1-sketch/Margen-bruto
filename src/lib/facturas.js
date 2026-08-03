@@ -11,14 +11,21 @@ async function cargarPdfjs() {
 }
 
 // ---------------------------------------------------------------------------
-// Extracción de texto crudo, reconstruyendo líneas por posición (Y) para
-// que las columnas de una tabla queden en el mismo renglón de texto.
+// Extracción de texto: se toma cada ítem de texto del PDF con su posición
+// (x, y), se ordena en orden de lectura (de arriba hacia abajo, izquierda a
+// derecha) y se concatena todo en un único string. No se intenta reconstruir
+// "renglones" — algunas plantillas de factura ubican el final de una
+// descripción partida en dos líneas exactamente a la misma altura que el
+// arranque del ítem siguiente, lo que rompe cualquier agrupado por Y.
+// En cambio, el parseo de ítems (más abajo) ancla cada producto por el
+// patrón numérico que lo cierra (cantidad/unidad/precio/IVA), sin importar
+// en qué línea visual haya caído cada pedazo de texto.
 // ---------------------------------------------------------------------------
-async function extraerLineasPDF(file) {
+async function extraerTextoPDF(file) {
   const pdfjsLib = await cargarPdfjs();
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const lineas = [];
+  let texto = "";
 
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -28,63 +35,35 @@ async function extraerLineasPDF(file) {
       .map((i) => ({ x: i.transform[4], y: i.transform[5], str: i.str }));
 
     items.sort((a, b) => b.y - a.y || a.x - b.x);
-
-    let actual = null;
-    const filas = [];
-    for (const it of items) {
-      if (!actual || Math.abs(actual.y - it.y) > 1.2) {
-        actual = { y: it.y, items: [] };
-        filas.push(actual);
-      }
-      actual.items.push(it);
-    }
-    for (const fila of filas) {
-      const linea = fila.items
-        .sort((a, b) => a.x - b.x)
-        .map((i) => i.str)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (linea) lineas.push(linea);
-    }
+    texto += items.map((i) => i.str).join(" ") + " ";
   }
-  return lineas;
+  return texto.replace(/\s+/g, " ").trim();
 }
 
-
 // ---------------------------------------------------------------------------
-// Parser genérico de tabla de ítems: busca líneas que terminen con el patrón
-// cantidad / unidad / precio / subtotal / iva% / subtotal con iva
+// Parser genérico de ítems: busca, sobre el texto completo, el patrón
+// "descripción + cantidad + unidad + precio + subtotal + iva% + subtotal c/iva"
+// repetido las veces que aparezca. La descripción se captura de forma no
+// codiciosa y acotada (3 a 90 caracteres) — eso hace que, aunque el texto
+// tenga ruido antes (encabezados, datos del cliente, etc.), el motor de
+// regex termine tomando solo el fragmento inmediatamente anterior al bloque
+// numérico de cada ítem, sin arrastrar texto de ítems anteriores.
 // ---------------------------------------------------------------------------
-const PATRON_ITEM =
-  /^(.+?)\s+([\d]+(?:[.,]\d+)?)\s+(Unidades|Litros?|Kilogramos|Kg|Bolsas|Lts?|Metros|Rollos)\s+([\d]+(?:[.,]\d+)?)\s+([\d]+(?:[.,]\d+)?)\s+([\d]+(?:[.,]\d+)?)\s*%\s+([\d]+(?:[.,]\d+)?)$/i;
+const PATRON_ITEM_GLOBAL =
+  /([^\n]{3,90}?)\s+(\d+(?:[.,]\d+)?)\s+(Unidades|Litros?|Kilogramos|Kg|Bolsas|Lts?|Metros|Rollos)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*%\s+(\d+(?:[.,]\d+)?)/g;
 
-function parsearTablaGenerica(lineas) {
+function parsearTablaGenerica(texto) {
   const items = [];
-  let arrastre = "";
-  for (const linea of lineas) {
-    const m = linea.match(PATRON_ITEM);
-    if (m) {
-      const producto = `${arrastre} ${m[1]}`.trim();
-      items.push({
-        producto,
-        cantidad: parseFloat(m[2].replace(",", ".")),
-        unidad: m[3],
-        precio_unitario_neto: parseFloat(m[4].replace(",", ".")),
-        subtotal_neto: parseFloat(m[5].replace(",", ".")),
-        iva_pct: parseFloat(m[6].replace(",", ".")),
-        subtotal_con_iva: parseFloat(m[7].replace(",", ".")),
-      });
-      arrastre = "";
-    } else if (
-      linea.length < 45 &&
-      !/factura|cuit|fecha|total|iva|neto|cond\.|moneda|pedido|domicilio|lugar de pago/i.test(linea)
-    ) {
-      // posible primera mitad de una descripción partida en dos líneas
-      arrastre = linea;
-    } else {
-      arrastre = "";
-    }
+  for (const m of texto.matchAll(PATRON_ITEM_GLOBAL)) {
+    items.push({
+      producto: m[1].trim().replace(/\s{2,}/g, " "),
+      cantidad: parseFloat(m[2].replace(",", ".")),
+      unidad: m[3],
+      precio_unitario_neto: parseFloat(m[4].replace(",", ".")),
+      subtotal_neto: parseFloat(m[5].replace(",", ".")),
+      iva_pct: parseFloat(m[6].replace(",", ".")),
+      subtotal_con_iva: parseFloat(m[7].replace(",", ".")),
+    });
   }
   return items;
 }
@@ -109,20 +88,20 @@ export const PARSERS = [
     id: "agroempresa_maquinas",
     nombre: "Agroempresa Máquinas Agrícolas",
     detectar: (texto) => /AGROEMPRESA MAQUINAS AGRICOLAS/i.test(texto),
-    parsear: (texto, lineas) => ({
+    parsear: (texto) => ({
       proveedor: "Agroempresa Máquinas Agrícolas",
       fecha: extraerFecha(texto),
       moneda: /DOLARES/i.test(texto) ? "USD" : "ARS",
       total: extraerTotal(texto),
-      items: parsearTablaGenerica(lineas),
+      items: parsearTablaGenerica(texto),
     }),
   },
 ];
 
-export function parsearFactura(texto, lineas) {
+export function parsearFactura(texto) {
   const parser = PARSERS.find((p) => p.detectar(texto));
   if (parser) {
-    return { ...parser.parsear(texto, lineas), proveedorDetectado: parser.nombre, generico: false };
+    return { ...parser.parsear(texto), proveedorDetectado: parser.nombre, generico: false };
   }
   // Sin proveedor conocido: probamos igual la tabla genérica y avisamos que es un intento best-effort.
   return {
@@ -130,14 +109,13 @@ export function parsearFactura(texto, lineas) {
     fecha: extraerFecha(texto),
     moneda: /DOLARES|U\$S|USD/i.test(texto) ? "USD" : "ARS",
     total: extraerTotal(texto),
-    items: parsearTablaGenerica(lineas),
+    items: parsearTablaGenerica(texto),
     proveedorDetectado: null,
     generico: true,
   };
 }
 
 export async function extraerFactura(file) {
-  const lineas = await extraerLineasPDF(file);
-  const texto = lineas.join("\n");
-  return parsearFactura(texto, lineas);
+  const texto = await extraerTextoPDF(file);
+  return parsearFactura(texto);
 }
