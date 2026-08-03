@@ -74,6 +74,7 @@ export default function Ejecucion() {
   const [facturaError, setFacturaError] = useState(null);
   const [factura, setFactura] = useState(null); // resultado crudo del parser
   const [itemsRevision, setItemsRevision] = useState([]); // copia editable para la revisión
+  const [mostrarDebug, setMostrarDebug] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -518,6 +519,43 @@ export default function Ejecucion() {
               </span>
             )}
           </div>
+
+          <button
+            onClick={() => setMostrarDebug((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: T.textDim,
+              fontFamily: T.bodyFont,
+              fontSize: 11,
+              textDecoration: "underline",
+              cursor: "pointer",
+              padding: 0,
+              marginBottom: 14,
+            }}
+          >
+            {mostrarDebug ? "Ocultar" : "Ver"} texto crudo extraído del PDF (para depurar)
+          </button>
+          {mostrarDebug && (
+            <textarea
+              readOnly
+              value={factura.textoDebug || ""}
+              style={{
+                width: "100%",
+                minHeight: 120,
+                background: T.bg,
+                border: `1px solid ${T.panelLine}`,
+                borderRadius: 4,
+                color: T.textDim,
+                fontFamily: T.monoFont,
+                fontSize: 11,
+                padding: 8,
+                marginBottom: 14,
+                resize: "vertical",
+              }}
+              onClick={(e) => e.target.select()}
+            />
+          )}
 
           {/* Asignación masiva */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>

@@ -117,5 +117,6 @@ export function parsearFactura(texto) {
 
 export async function extraerFactura(file) {
   const texto = await extraerTextoPDF(file);
-  return parsearFactura(texto);
+  const resultado = parsearFactura(texto);
+  return { ...resultado, textoDebug: texto };
 }
