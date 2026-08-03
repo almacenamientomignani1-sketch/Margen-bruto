@@ -32,7 +32,7 @@ async function extraerLineasPDF(file) {
     let actual = null;
     const filas = [];
     for (const it of items) {
-      if (!actual || Math.abs(actual.y - it.y) > 3) {
+      if (!actual || Math.abs(actual.y - it.y) > 1.2) {
         actual = { y: it.y, items: [] };
         filas.push(actual);
       }

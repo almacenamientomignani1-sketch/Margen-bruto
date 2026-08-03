@@ -261,6 +261,7 @@ export default function Ejecucion() {
           producto: it.producto,
           cantidad: it.cantidad,
           precio_unitario: it.subtotal_con_iva != null && it.cantidad ? it.subtotal_con_iva / it.cantidad : it.precio_unitario_neto,
+          iva: it.subtotal_con_iva != null && it.subtotal_neto != null ? it.subtotal_con_iva - it.subtotal_neto : null,
           moneda: resultado.moneda,
           seccion: SECCIONES[0],
           categoriaId: "",
@@ -325,7 +326,7 @@ export default function Ejecucion() {
           moneda: it.moneda,
           proveedor: factura.proveedor || null,
           fecha: factura.fecha || null,
-          nota: "Cargado desde factura PDF",
+          nota: it.iva != null ? `Cargado desde factura PDF · IVA línea: ${it.moneda} ${it.iva.toFixed(2)}` : "Cargado desde factura PDF",
         });
       }
       cancelarRevisionFactura();
@@ -579,7 +580,7 @@ export default function Ejecucion() {
                     />
                   </div>
                   <div style={{ minWidth: 105 }}>
-                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Precio unitario</div>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>Precio unitario (c/IVA)</div>
                     <div style={{ display: "flex", gap: 4 }}>
                       <input
                         type="number"
@@ -595,6 +596,12 @@ export default function Ejecucion() {
                         <option value="ARS">ARS</option>
                         <option value="USD">USD</option>
                       </select>
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 80 }}>
+                    <div style={{ fontFamily: T.bodyFont, fontSize: 9, color: T.textDim, marginBottom: 2 }}>IVA (línea)</div>
+                    <div style={{ ...inputStyle, width: 75, cursor: "default", color: T.textDim }}>
+                      {it.iva != null ? it.iva.toFixed(2) : "—"}
                     </div>
                   </div>
                   <div style={{ minWidth: 130 }}>
